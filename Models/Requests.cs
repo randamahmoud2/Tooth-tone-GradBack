@@ -24,7 +24,7 @@ namespace DentalManagementAPI.Models
         /// <summary>
         /// User's role (e.g., doctor, patient, receptionist, manager)
         /// </summary>
-        [Required(ErrorMessage = "Role is required")]
+        //[Required(ErrorMessage = "Role is required")]
         public string Role { get; set; }
     }
 

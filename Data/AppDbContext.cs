@@ -32,6 +32,9 @@ namespace DentalManagementAPI.Data
         public DbSet<Payment> Payments { get; set; }
         public DbSet<Salary> Salaries { get; set; }
 
+        public DbSet<Procedure> Procedures { get; set; }
+        public DbSet<ToothProcedure> ToothProcedures { get; set; }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
 
