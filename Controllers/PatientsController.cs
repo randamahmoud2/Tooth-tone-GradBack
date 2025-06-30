@@ -21,7 +21,7 @@ namespace DentalManagementAPI.Controllers
             _logger = logger;
         }
 
-        // NEW: Get all patients for Receptionist
+        // GET: api/Patients
         [HttpGet]
         public async Task<ActionResult<IEnumerable<object>>> GetPatients()
         {
@@ -97,11 +97,18 @@ namespace DentalManagementAPI.Controllers
                         p.Email,
                         p.PhoneNumber,
                         p.Dob,
-                        PatientId = $"P{id.ToString("D5")}",
+                        PatientId = $"P{p.Id.ToString("D5")}",
                         LastVisit = p.Bookings
                             .Where(b => b.Status == "Completed" && b.BookingDate > new DateTime(2000, 1, 1))
                             .OrderByDescending(b => b.BookingDate)
                             .Select(b => (DateTime?)b.BookingDate)
+                            .FirstOrDefault(),
+                        BloodType = p.BloodType ?? "N/A",
+                        Status = p.Bookings.Any(b => b.Status == "Active" || b.Status == "Pending") ? "Active" : "Inactive",
+                        NextAppointment = _context.Appointments
+                            .Where(a => a.PatientId == p.Id && (a.Status == "Active" || a.Status == "Pending") && a.AppointmentDate >= DateTime.Today)
+                            .OrderBy(a => a.AppointmentDate)
+                            .Select(a => (DateTime?)a.AppointmentDate)
                             .FirstOrDefault()
                     })
                     .FirstOrDefaultAsync();
@@ -112,7 +119,7 @@ namespace DentalManagementAPI.Controllers
                 }
 
                 var upcomingAppointments = await _context.Appointments
-                    .Where(a => a.PatientId == id && a.Status == "Active" && a.AppointmentDate >= DateTime.Today)
+                    .Where(a => a.PatientId == id && (a.Status == "Active" || a.Status == "Pending") && a.AppointmentDate >= DateTime.Today)
                     .Include(a => a.Doctor)
                     .OrderBy(a => a.AppointmentDate)
                     .Select(a => new
@@ -123,22 +130,23 @@ namespace DentalManagementAPI.Controllers
                         Time = a.TimeSlot,
                         Date = a.AppointmentDate,
                         Status = a.Status,
-                        Price = a.Doctor != null ? a.Doctor.Fee.ToString("C") : "N/A"
+                        Price = a.Doctor != null ? a.Doctor.Fee.ToString("C") : "N/A",
+                        Procedure = a.Status == "Completed" ? "Completed dental visit" : "Scheduled dental appointment"
                     })
                     .ToListAsync();
 
-                var bookingActivities = await _context.Bookings
-                    .Where(b => b.PatientId == id && b.BookingDate > new DateTime(2000, 1, 1))
-                    .OrderByDescending(b => b.BookingDate)
+                var appointmentActivities = await _context.Appointments
+                    .Where(a => a.PatientId == id && a.AppointmentDate > new DateTime(2000, 1, 1))
+                    .OrderByDescending(a => a.AppointmentDate)
                     .Take(5)
-                    .Select(b => new
+                    .Select(a => new
                     {
-                        b.Id,
+                        a.Id,
                         Type = "Appointment",
-                        Title = b.Status == "Completed" ? "Dental Appointment" : "Scheduled Appointment",
-                        Status = b.Status,
-                        Date = b.BookingDate,
-                        Description = b.Status == "Completed" ? "Completed dental visit" : "Scheduled dental appointment"
+                        Title = a.Status == "Completed" ? "Dental Appointment" : "Scheduled Appointment",
+                        Status = a.Status,
+                        Date = a.AppointmentDate,
+                        Description = a.Status == "Completed" ? "Completed dental visit" : "Scheduled dental appointment"
                     })
                     .ToListAsync();
 
@@ -158,7 +166,7 @@ namespace DentalManagementAPI.Controllers
                     })
                     .ToListAsync();
 
-                var recentActivities = bookingActivities
+                var recentActivities = appointmentActivities
                     .Union(paymentActivities)
                     .OrderByDescending(a => a.Date)
                     .Take(5)
