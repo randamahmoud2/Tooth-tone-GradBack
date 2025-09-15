@@ -96,7 +96,7 @@ public class AppointmentsController : ControllerBase
                 Status = "Pending",
                 BookingDate = DateTime.UtcNow,
                 Fee = doctor.Fee,
-                PaymentAmount = doctor.Fee + 100,
+                PaymentAmount = doctor.Fee,
                 // Don't attach navigation properties here to prevent tracking conflicts
                 Patient = null,
                 Doctor = null

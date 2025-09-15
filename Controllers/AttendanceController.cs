@@ -3,7 +3,10 @@ using DentalManagementAPI.Models;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using System.Globalization;
+using System;
+using System.Linq;
+using System.Threading.Tasks;
+
 namespace DentalManagementAPI.Controllers
 {
     [Route("api/[controller]")]
@@ -13,14 +16,21 @@ namespace DentalManagementAPI.Controllers
         private readonly AppDbContext _context;
         private readonly HospitalLocation _hospitalLocation;
 
-        public AttendanceController(AppDbContext context)
+        public class HospitalLocation
+        {
+            public double Latitude { get; set; }
+            public double Longitude { get; set; }
+            public int RadiusMeters { get; set; }
+        }
+
+        public AttendanceController(AppDbContext context, IConfiguration configuration)
         {
             _context = context;
-            _hospitalLocation = new HospitalLocation
+            _hospitalLocation = configuration.GetSection("HospitalLocation").Get<HospitalLocation>() ?? new HospitalLocation
             {
-                Latitude = 30.0444,  // Cairo coordinates
-                Longitude = 31.2357,
-                RadiusMeters = 200
+                Latitude = 30.012258932723245, // Nile University center
+                Longitude = 30.987065075068312,
+                RadiusMeters = 2000 // 2000 meters radius
             };
         }
 
@@ -38,14 +48,15 @@ namespace DentalManagementAPI.Controllers
 
             if (!isWithinHospital)
             {
-                return BadRequest("You must be within hospital premises to check in");
+                return BadRequest("You must be at Nile University to check in");
             }
 
-            // Check if already checked in today
+            // Check if user has already checked in today
             var today = DateTime.Today;
             var existingRecord = await _context.AttendanceRecords
                 .FirstOrDefaultAsync(a =>
-                    a.DoctorId == request.DoctorId &&
+                    a.UserId == request.UserId &&
+                    a.UserType == request.UserType &&
                     a.Date.Date == today &&
                     a.CheckOutTime == null);
 
@@ -67,7 +78,8 @@ namespace DentalManagementAPI.Controllers
             // Create new record
             var record = new AttendanceRecord
             {
-                DoctorId = request.DoctorId,
+                UserId = request.UserId,
+                UserType = request.UserType, // "Doctor" or "Receptionist"
                 Date = today,
                 CheckInTime = checkInTime,
                 Status = status,
@@ -83,7 +95,7 @@ namespace DentalManagementAPI.Controllers
                 record.Id,
                 record.CheckInTime,
                 record.Status,
-                Message = "Checked in successfully"
+                Message = "Check-in recorded successfully"
             });
         }
 
@@ -101,54 +113,70 @@ namespace DentalManagementAPI.Controllers
 
             if (!isWithinHospital)
             {
-                return BadRequest("You must be within hospital premises to check out");
+                return BadRequest("You must be at Nile University to check out");
             }
 
-            // Get the record
+            // Find the attendance record
             var record = await _context.AttendanceRecords
-                .FirstOrDefaultAsync(a => a.Id == request.AttendanceRecordId);
+                .FirstOrDefaultAsync(a => a.Id == request.AttendanceRecordId && a.CheckOutTime == null);
 
             if (record == null)
             {
-                return NotFound("Attendance record not found");
+                return BadRequest("No active check-in record found");
             }
 
-            if (record.CheckOutTime != null)
-            {
-                return BadRequest("You have already checked out");
-            }
+            // Update check-out time
+            record.CheckOutTime = DateTime.Now;
+            record.LocationCoordinates = $"{request.Latitude},{request.Longitude}";
 
             // Calculate working hours
-            var checkOutTime = DateTime.Now;
-            var workingHours = (decimal)(checkOutTime - record.CheckInTime).TotalHours;
+            var workingHours = (record.CheckOutTime.Value - record.CheckInTime).TotalHours;
+            record.WorkingHours = (decimal)Math.Round(workingHours, 2);
 
-            // Update record
-            record.CheckOutTime = checkOutTime;
-            record.WorkingHours = workingHours;
-            record.LocationCoordinates = $"{request.Latitude},{request.Longitude}";
-            record.IsVerified = true;
-
-            _context.AttendanceRecords.Update(record);
             await _context.SaveChangesAsync();
 
             return Ok(new
             {
+                record.Id,
                 record.CheckOutTime,
                 record.WorkingHours,
-                Message = "Checked out successfully"
+                Message = "Check-out recorded successfully"
             });
         }
 
-        // GET: api/attendance/history/{doctorId}
-        [HttpGet("history/{doctorId}")]
-        public async Task<IActionResult> GetAttendanceHistory(int doctorId, [FromQuery] int days = 30)
+        // GET: api/attendance/today/{userId}/{userType}
+        [HttpGet("today/{userId}/{userType}")]
+        public async Task<IActionResult> GetTodayStatus(int userId, string userType)
         {
-            var cutoffDate = DateTime.Today.AddDays(-days);
+            var today = DateTime.Today;
+            var record = await _context.AttendanceRecords
+                .FirstOrDefaultAsync(a =>
+                    a.UserId == userId &&
+                    a.UserType == userType &&
+                    a.Date.Date == today &&
+                    a.CheckOutTime == null);
 
-            var history = await _context.AttendanceRecords
-                .Where(a => a.DoctorId == doctorId && a.Date >= cutoffDate)
+            if (record == null)
+            {
+                return Ok(new { isCheckedIn = false });
+            }
+
+            return Ok(new
+            {
+                isCheckedIn = true,
+                record.Id,
+                record.CheckInTime,
+                record.Status
+            });
+        }
+
+        // GET: api/attendance/history/{userId}/{userType}
+        [HttpGet("history/{userId}/{userType}")]
+        public async Task<IActionResult> GetHistory(int userId, string userType)
+        {
+            var records = await _context.AttendanceRecords
+                .Where(a => a.UserId == userId && a.UserType == userType)
                 .OrderByDescending(a => a.Date)
-                .ThenByDescending(a => a.CheckInTime)
                 .Select(a => new
                 {
                     a.Id,
@@ -156,51 +184,18 @@ namespace DentalManagementAPI.Controllers
                     CheckIn = a.CheckInTime.ToString("hh:mm tt"),
                     CheckOut = a.CheckOutTime.HasValue ? a.CheckOutTime.Value.ToString("hh:mm tt") : null,
                     a.Status,
-                    WorkingHours = a.WorkingHours.ToString("0.00"),
-                    Location = a.LocationCoordinates,
-                    a.IsVerified
+                    WorkingHours = Math.Round(a.WorkingHours, 2),
+                    a.LocationCoordinates
                 })
                 .ToListAsync();
 
-            return Ok(history);
+            return Ok(records);
         }
 
-        // GET: api/attendance/today/{doctorId}
-        [HttpGet("today/{doctorId}")]
-        public async Task<IActionResult> GetTodayStatus(int doctorId)
-        {
-            var today = DateTime.Today;
-
-            var record = await _context.AttendanceRecords
-                .Where(a => a.DoctorId == doctorId && a.Date == today)
-                .OrderByDescending(a => a.CheckInTime)
-                .FirstOrDefaultAsync();
-
-            if (record == null)
-            {
-                return Ok(new
-                {
-                    IsCheckedIn = false,
-                    Message = "Not checked in today"
-                });
-            }
-
-            return Ok(new
-            {
-                IsCheckedIn = record.CheckOutTime == null,
-                record.Id,
-                record.CheckInTime,
-                record.CheckOutTime,
-                record.Status,
-                record.WorkingHours,
-                record.IsVerified
-            });
-        }
-
-        // Helper method to check location
+        // Helper method to calculate distance using Haversine formula
         private bool IsWithinHospitalRadius(double lat1, double lon1, double lat2, double lon2, int radius)
         {
-            const double EarthRadius = 6371000; // meters
+            const double EarthRadius = 6371000; // Earth's radius in meters
             var dLat = ToRadians(lat2 - lat1);
             var dLon = ToRadians(lon2 - lon1);
             var a = Math.Sin(dLat / 2) * Math.Sin(dLat / 2) +
@@ -208,14 +203,27 @@ namespace DentalManagementAPI.Controllers
                     Math.Sin(dLon / 2) * Math.Sin(dLon / 2);
             var c = 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
             var distance = EarthRadius * c;
-
             return distance <= radius;
         }
 
-        private double ToRadians(double angle)
+        private double ToRadians(double deg)
         {
-            return Math.PI * angle / 180.0;
+            return deg * Math.PI / 180;
+        }
+
+        public class CheckInRequest
+        {
+            public int UserId { get; set; }
+            public string UserType { get; set; } // "Doctor" or "Receptionist"
+            public double Latitude { get; set; }
+            public double Longitude { get; set; }
+        }
+
+        public class CheckOutRequest
+        {
+            public int AttendanceRecordId { get; set; }
+            public double Latitude { get; set; }
+            public double Longitude { get; set; }
         }
     }
 }
-

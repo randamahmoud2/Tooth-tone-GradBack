@@ -127,7 +127,7 @@
         },
         {
           "id": 14,
-          "implant": false,
+          "implant": true,
           "mobility": 2,
           "furcation": {
             "m": 0,
@@ -135,14 +135,14 @@
             "c": 0
           },
           "bleed_on_probing": {
-            "a": false,
+            "a": true,
             "b": false,
             "c": false
           },
           "plaque": {
             "a": false,
             "b": false,
-            "c": false
+            "c": true
           },
           "gingival_depth": {
             "a": 0,

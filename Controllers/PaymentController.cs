@@ -11,6 +11,20 @@ namespace DentalManagementAPI.Controllers
     {
         private readonly AppDbContext _context;
 
+        // Temporary dictionary to map PatientId to Procedure Name
+        private static readonly Dictionary<int, string> PatientProcedureMap = new Dictionary<int, string>
+        {
+            { 5, "Zirconia Crown" }, // reem ahmed
+            { 8, "Composite Filling" }, // Sara Esalam
+            { 6, "Extraction" }, // nouran galal
+            { 10, "Amalgam Filling" }, // ali
+            { 7, "Root Canal Treatment" }, // Ali ahmed
+            { 12, "Professional Cleaning" } // Saif
+            // Add more mappings as needed
+        };
+
+
+
         public PaymentController(AppDbContext context)
         {
             _context = context;
@@ -31,7 +45,7 @@ namespace DentalManagementAPI.Controllers
                         id = b.Id,
                         date = b.Date.ToString("yyyy-MM-dd"),
                         procedure = "Dental Procedure", // يمكن استبدالها بحقل حقيقي من الداتابيز
-                        doctor = b.Doctor != null ? $"Dr. {b.Doctor.Name}" : "N/A",
+                        doctor = b.Doctor != null ? $" {b.Doctor.Name}" : "N/A",
                         amount = b.PaymentAmount,
                         status = b.Status
                     })
@@ -65,7 +79,7 @@ namespace DentalManagementAPI.Controllers
                         id = b.Id,
                         date = b.Date.ToString("yyyy-MM-dd"),
                         procedure = "Dental Procedure", // يمكن استبدالها بحقل حقيقي
-                        doctor = b.Doctor != null ? $"Dr. {b.Doctor.Name}" : "N/A",
+                        doctor = b.Doctor != null ? $" {b.Doctor.Name}" : "N/A",
                         amount = b.PaymentAmount,
                         status = b.Status
                     })
@@ -98,7 +112,7 @@ namespace DentalManagementAPI.Controllers
                         id = b.Id,
                         date = b.Date.ToString("yyyy-MM-dd"),
                         procedure = "Dental Procedure",
-                        doctor = b.Doctor != null ? $"Dr. {b.Doctor.Name}" : "N/A",
+                        doctor = b.Doctor != null ? $". {b.Doctor.Name}" : "N/A",
                         amount = b.PaymentAmount,
                         status = b.Status
                     })
